@@ -11,6 +11,7 @@ import nbformat
 from textwrap import wrap
 import math
 import tkinter as tk
+from datetime import datetime
 
 def extract_io_operations(file_path):
     operations = []
@@ -154,7 +155,60 @@ def get_screen_size():
     root.destroy()
     return screen_width, screen_height
 
-def visualize_graph(G):
+
+
+
+
+
+def normalize_path(path):
+    return os.path.normpath(path).replace('\\', '/')
+
+def trace_file_lineage(G, target_file):
+    target_file = normalize_path(target_file)
+    
+    target_node = None
+    for node in G.nodes():
+        normalized_node = normalize_path(node)
+        if (target_file in normalized_node or 
+            normalized_node.endswith(target_file) or 
+            os.path.basename(target_file) in normalized_node):
+            target_node = node
+            break
+    
+    if target_node is None:
+        print(f"File {target_file} not found in the graph.")
+        return None
+
+    lineage_graph = nx.DiGraph()
+    
+    def add_predecessors(node):
+        predecessors = list(G.predecessors(node))
+        for pred in predecessors:
+            lineage_graph.add_edge(pred, node)
+            add_predecessors(pred)
+    
+    def add_successors(node):
+        successors = list(G.successors(node))
+        for succ in successors:
+            lineage_graph.add_edge(node, succ)
+            add_successors(succ)
+    
+    lineage_graph.add_node(target_node)
+    add_predecessors(target_node)
+    add_successors(target_node)
+    
+    return lineage_graph
+
+def save_nodes_list(G):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"graph_nodes_{timestamp}.txt"
+    with open(filename, 'w') as f:
+        for node in sorted(G.nodes()):
+            f.write(f"{node}\n")
+    print(f"List of nodes saved to {filename}")
+
+
+def visualize_graph(G, mode='interactive', title="Data Lineage Diagram"):
     if not G.nodes():
         print("No data to visualize. The graph is empty.")
         return
@@ -162,14 +216,10 @@ def visualize_graph(G):
     components = list(nx.weakly_connected_components(G))
     grid_size = math.ceil(math.sqrt(len(components)))
     
-    # Get screen size
-    screen_width, screen_height = get_screen_size()
+    fig_width = min(32 * (grid_size / 2), 20)  # Max width of 20 inches
+    fig_height = min(24 * (grid_size / 2), 15)  # Max height of 15 inches
     
-    # Calculate figure size based on screen size
-    fig_width = min(32 * (grid_size / 2), screen_width / 100)  # Convert pixels to inches
-    fig_height = min(24 * (grid_size / 2), screen_height / 100)  # Convert pixels to inches
-    
-    fig = plt.figure(figsize=(fig_width, fig_height))
+    fig = plt.figure(figsize=(fig_width, fig_height), dpi=100)
     
     for i, component in enumerate(components):
         subgraph = G.subgraph(component)
@@ -204,7 +254,7 @@ def visualize_graph(G):
         
         nx.draw_networkx_labels(subgraph, pos, labels, font_size=font_size, font_weight="bold")
 
-    plt.title("Data Lineage Diagram")
+    plt.title(title)
     plt.axis('off')
     plt.tight_layout()
 
@@ -222,25 +272,39 @@ def visualize_graph(G):
 
     plt.subplots_adjust(right=0.85)
     
-    # Maximize the window (this should work for most backends)
-    mng = plt.get_current_fig_manager()
-    if hasattr(mng, 'window'):
-        if hasattr(mng.window, 'state'):
-            mng.window.state('zoomed')  # For TkAgg on Windows
-        elif hasattr(mng.window, 'showMaximized'):
-            mng.window.showMaximized()  # For Qt backend
-        elif hasattr(mng.window, 'maximize'):
-            mng.window.maximize()  # For wxPython
-    elif hasattr(mng, 'frame'):
-        mng.frame.Maximize(True)  # For WX backend
-    elif hasattr(mng, 'full_screen_toggle'):
-        mng.full_screen_toggle()  # For Qt5Agg backend on some systems
-    elif hasattr(mng, 'resize'):
-        mng.resize(*mng.window.maxsize())  # For TkAgg on non-Windows systems
-    
-    plt.show()
+    if mode == 'interactive':
+        plt.show()
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        output_file = f'{title.replace(" ", "_").lower()}_{timestamp}.png'
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Diagram saved as {output_file}")
 
 if __name__ == "__main__":
     directory = input("Enter the directory path containing your Python scripts and Jupyter notebooks: ")
     G = create_lineage_graph(directory)
-    visualize_graph(G)
+    
+    while True:
+        choice = input("Choose an option (full/trace/list/quit): ").lower()
+        if choice == 'full':
+            mode = input("Choose visualization mode (interactive/png): ").lower()
+            if mode in ['interactive', 'png']:
+                visualize_graph(G, mode)
+            else:
+                print("Invalid mode. Please enter 'interactive' or 'png'.")
+        elif choice == 'trace':
+            target_file = input("Enter the full path or name of the file to trace: ")
+            lineage_graph = trace_file_lineage(G, target_file)
+            if lineage_graph:
+                mode = input("Choose visualization mode (interactive/png): ").lower()
+                if mode in ['interactive', 'png']:
+                    visualize_graph(lineage_graph, mode, f"Lineage of {os.path.basename(target_file)}")
+                else:
+                    print("Invalid mode. Please enter 'interactive' or 'png'.")
+        elif choice == 'list':
+            save_nodes_list(G)
+        elif choice == 'quit':
+            break
+        else:
+            print("Invalid choice. Please enter 'full', 'trace', 'list', or 'quit'.")
