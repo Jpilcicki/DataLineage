@@ -155,11 +155,6 @@ def get_screen_size():
     root.destroy()
     return screen_width, screen_height
 
-
-
-
-
-
 def normalize_path(path):
     return os.path.normpath(path).replace('\\', '/')
 
@@ -206,15 +201,56 @@ def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', 
         # Create a copy of the full graph
         full_graph = G.copy()
         
+        # Identify connected components (subgraphs)
+        components = list(nx.weakly_connected_components(full_graph))
+        
+        # Calculate the complexity of each subgraph
+        complexities = [len(component) for component in components]
+        total_complexity = sum(complexities)
+        
+        # Calculate the figure size based on the total complexity
+        base_size = 20
+        fig_size = max(base_size, base_size * math.log(total_complexity))
+        plt.figure(figsize=(fig_size, fig_size))
+        
+        # Custom positioning for subgraphs
+        def position_subgraphs(components, complexities):
+            positions = {}
+            grid_size = math.ceil(math.sqrt(len(components)))
+            total_area = grid_size ** 2
+            scale = math.sqrt(total_area / total_complexity)
+            
+            x, y = 0, 0
+            for component, complexity in zip(components, complexities):
+                subgraph = full_graph.subgraph(component)
+                size = math.sqrt(complexity) * scale
+                sub_pos = nx.spring_layout(subgraph)
+                
+                # Scale and translate the subgraph
+                for node, pos in sub_pos.items():
+                    positions[node] = ((pos[0] * size + x), (pos[1] * size + y))
+                
+                x += size
+                if x > grid_size:
+                    x = 0
+                    y += size
+            
+            return positions
+        
+        pos = position_subgraphs(components, complexities)
+        
         # Highlight the nodes and edges in the lineage
         node_colors = []
         edge_colors = []
+        node_sizes = []
         
         for node in full_graph.nodes():
             if node in lineage_graph.nodes():
                 node_colors.append('red')
+                node_sizes.append(300)
             else:
                 node_colors.append(get_node_color(node))
+                node_sizes.append(100)
         
         for edge in full_graph.edges():
             if edge in lineage_graph.edges():
@@ -222,14 +258,12 @@ def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', 
             else:
                 edge_colors.append('lightgray')
         
-        # Visualize the full graph with highlighted lineage
-        plt.figure(figsize=(20, 15))
-        pos = nx.spring_layout(full_graph, k=0.5, iterations=50)
+        # Draw the graph
+        nx.draw_networkx_nodes(full_graph, pos, node_color=node_colors, node_size=node_sizes)
+        nx.draw_networkx_edges(full_graph, pos, edge_color=edge_colors, width=0.5, arrows=True, arrowsize=5)
         
-        nx.draw_networkx_nodes(full_graph, pos, node_color=node_colors, node_size=300)
-        nx.draw_networkx_edges(full_graph, pos, edge_color=edge_colors, width=1, arrows=True, arrowsize=10)
-        
-        labels = {node: '\n'.join(wrap(os.path.basename(node), 20)) for node in full_graph.nodes()}
+        # Add labels only for the nodes in the lineage
+        labels = {node: '\n'.join(wrap(os.path.basename(node), 20)) for node in lineage_graph.nodes()}
         nx.draw_networkx_labels(full_graph, pos, labels, font_size=6)
         
         plt.title(f"Full Graph with Highlighted Lineage of {os.path.basename(target_file)}")
