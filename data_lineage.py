@@ -199,6 +199,53 @@ def trace_file_lineage(G, target_file):
     
     return lineage_graph
 
+def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', context='sub'):
+    if context == 'sub':
+        visualize_graph(lineage_graph, mode, f"Lineage of {os.path.basename(target_file)}")
+    else:
+        # Create a copy of the full graph
+        full_graph = G.copy()
+        
+        # Highlight the nodes and edges in the lineage
+        node_colors = []
+        edge_colors = []
+        
+        for node in full_graph.nodes():
+            if node in lineage_graph.nodes():
+                node_colors.append('red')
+            else:
+                node_colors.append(get_node_color(node))
+        
+        for edge in full_graph.edges():
+            if edge in lineage_graph.edges():
+                edge_colors.append('red')
+            else:
+                edge_colors.append('lightgray')
+        
+        # Visualize the full graph with highlighted lineage
+        plt.figure(figsize=(20, 15))
+        pos = nx.spring_layout(full_graph, k=0.5, iterations=50)
+        
+        nx.draw_networkx_nodes(full_graph, pos, node_color=node_colors, node_size=300)
+        nx.draw_networkx_edges(full_graph, pos, edge_color=edge_colors, width=1, arrows=True, arrowsize=10)
+        
+        labels = {node: '\n'.join(wrap(os.path.basename(node), 20)) for node in full_graph.nodes()}
+        nx.draw_networkx_labels(full_graph, pos, labels, font_size=6)
+        
+        plt.title(f"Full Graph with Highlighted Lineage of {os.path.basename(target_file)}")
+        plt.axis('off')
+        plt.tight_layout()
+        
+        if mode == 'interactive':
+            plt.show()
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+            output_file = f'full_graph_lineage_{os.path.basename(target_file)}_{timestamp}.png'
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"Full graph with highlighted lineage saved as {output_file}")
+
+
 def save_nodes_list(G):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     filename = f"graph_nodes_{timestamp}.txt"
@@ -298,10 +345,11 @@ if __name__ == "__main__":
             lineage_graph = trace_file_lineage(G, target_file)
             if lineage_graph:
                 mode = input("Choose visualization mode (interactive/png): ").lower()
-                if mode in ['interactive', 'png']:
-                    visualize_graph(lineage_graph, mode, f"Lineage of {os.path.basename(target_file)}")
+                context = input("Choose context (sub/full): ").lower()
+                if mode in ['interactive', 'png'] and context in ['sub', 'full']:
+                    visualize_traced_lineage(G, lineage_graph, target_file, mode, context)
                 else:
-                    print("Invalid mode. Please enter 'interactive' or 'png'.")
+                    print("Invalid input. Please enter 'interactive' or 'png' for mode, and 'sub' or 'full' for context.")
         elif choice == 'list':
             save_nodes_list(G)
         elif choice == 'quit':
