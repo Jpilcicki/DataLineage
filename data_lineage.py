@@ -13,6 +13,11 @@ import math
 import tkinter as tk
 from datetime import datetime
 
+import plotly.graph_objects as go
+import plotly.io as pio
+import json
+import textwrap
+
 def extract_io_operations(file_path):
     operations = []
     
@@ -155,6 +160,11 @@ def get_screen_size():
     root.destroy()
     return screen_width, screen_height
 
+
+
+
+
+
 def normalize_path(path):
     return os.path.normpath(path).replace('\\', '/')
 
@@ -201,56 +211,15 @@ def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', 
         # Create a copy of the full graph
         full_graph = G.copy()
         
-        # Identify connected components (subgraphs)
-        components = list(nx.weakly_connected_components(full_graph))
-        
-        # Calculate the complexity of each subgraph
-        complexities = [len(component) for component in components]
-        total_complexity = sum(complexities)
-        
-        # Calculate the figure size based on the total complexity
-        base_size = 20
-        fig_size = max(base_size, base_size * math.log(total_complexity))
-        plt.figure(figsize=(fig_size, fig_size))
-        
-        # Custom positioning for subgraphs
-        def position_subgraphs(components, complexities):
-            positions = {}
-            grid_size = math.ceil(math.sqrt(len(components)))
-            total_area = grid_size ** 2
-            scale = math.sqrt(total_area / total_complexity)
-            
-            x, y = 0, 0
-            for component, complexity in zip(components, complexities):
-                subgraph = full_graph.subgraph(component)
-                size = math.sqrt(complexity) * scale
-                sub_pos = nx.spring_layout(subgraph)
-                
-                # Scale and translate the subgraph
-                for node, pos in sub_pos.items():
-                    positions[node] = ((pos[0] * size + x), (pos[1] * size + y))
-                
-                x += size
-                if x > grid_size:
-                    x = 0
-                    y += size
-            
-            return positions
-        
-        pos = position_subgraphs(components, complexities)
-        
         # Highlight the nodes and edges in the lineage
         node_colors = []
         edge_colors = []
-        node_sizes = []
         
         for node in full_graph.nodes():
             if node in lineage_graph.nodes():
                 node_colors.append('red')
-                node_sizes.append(300)
             else:
                 node_colors.append(get_node_color(node))
-                node_sizes.append(100)
         
         for edge in full_graph.edges():
             if edge in lineage_graph.edges():
@@ -258,12 +227,14 @@ def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', 
             else:
                 edge_colors.append('lightgray')
         
-        # Draw the graph
-        nx.draw_networkx_nodes(full_graph, pos, node_color=node_colors, node_size=node_sizes)
-        nx.draw_networkx_edges(full_graph, pos, edge_color=edge_colors, width=0.5, arrows=True, arrowsize=5)
+        # Visualize the full graph with highlighted lineage
+        plt.figure(figsize=(20, 15))
+        pos = nx.spring_layout(full_graph, k=0.5, iterations=50)
         
-        # Add labels only for the nodes in the lineage
-        labels = {node: '\n'.join(wrap(os.path.basename(node), 20)) for node in lineage_graph.nodes()}
+        nx.draw_networkx_nodes(full_graph, pos, node_color=node_colors, node_size=300)
+        nx.draw_networkx_edges(full_graph, pos, edge_color=edge_colors, width=1, arrows=True, arrowsize=10)
+        
+        labels = {node: '\n'.join(wrap(os.path.basename(node), 20)) for node in full_graph.nodes()}
         nx.draw_networkx_labels(full_graph, pos, labels, font_size=6)
         
         plt.title(f"Full Graph with Highlighted Lineage of {os.path.basename(target_file)}")
@@ -289,7 +260,7 @@ def save_nodes_list(G):
     print(f"List of nodes saved to {filename}")
 
 
-def visualize_graph(G, mode='interactive', title="Data Lineage Diagram"):
+def visualize_graph_matplotlib(G, mode='interactive', title="Data Lineage Diagram"):
     if not G.nodes():
         print("No data to visualize. The graph is empty.")
         return
@@ -362,6 +333,114 @@ def visualize_graph(G, mode='interactive', title="Data Lineage Diagram"):
         plt.close(fig)
         print(f"Diagram saved as {output_file}")
 
+
+def wrap_text(text, width=20):
+    return '<br>'.join(textwrap.wrap(text, width=width))
+
+def visualize_graph_plotly(G, mode='interactive', title="Data Lineage Diagram"):
+    if not G.nodes():
+        print("No data to visualize. The graph is empty.")
+        return
+
+    pos = nx.spring_layout(G, k=0.5, iterations=50)
+
+    edge_x = []
+    edge_y = []
+    for edge in G.edges():
+        x0, y0 = pos[edge[0]]
+        x1, y1 = pos[edge[1]]
+        edge_x.extend([x0, x1, None])
+        edge_y.extend([y0, y1, None])
+
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=0.5, color='#888'),
+        hoverinfo='none',
+        mode='lines',
+        showlegend=False
+    )
+
+    node_x = []
+    node_y = []
+    node_colors = []
+    node_text = []
+    node_labels = []
+    for node in G.nodes():
+        x, y = pos[node]
+        node_x.append(x)
+        node_y.append(y)
+        node_colors.append(get_node_color(node))
+        adjacencies = list(G.adj[node])
+        node_text.append(f'{node}<br># of connections: {len(adjacencies)}')
+        node_labels.append(wrap_text(node.split('\\')[-1], width=15))  # Wrap the filename
+
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers+text',
+        hoverinfo='text',
+        text=node_labels,  # Use wrapped labels
+        textposition="top center",
+        textfont=dict(size=8),  # Smaller label size
+        marker=dict(
+            color=node_colors,
+            size=15,  # Larger node size
+            line_width=2),
+        showlegend=False
+    )
+
+    # Create a list of traces for the legend
+    legend_traces = []
+    for file_type, color in [('CSV', '#FFA07A'), ('JSON', '#98FB98'), ('PY', '#87CEFA'), ('IPYNB', '#DDA0DD'), ('Other', '#F0E68C')]:
+        legend_trace = go.Scatter(
+            x=[None], y=[None], mode='markers',
+            marker=dict(size=10, color=color),
+            legendgroup=file_type, showlegend=True, name=file_type
+        )
+        legend_traces.append(legend_trace)
+
+    fig = go.Figure(data=[edge_trace, node_trace] + legend_traces,
+                    layout=go.Layout(
+                        title=title,
+                        titlefont_size=16,
+                        showlegend=True,
+                        hovermode='closest',
+                        margin=dict(b=20,l=5,r=5,t=40),
+                        legend=dict(
+                            x=1.05,
+                            y=1,
+                            xanchor='left',
+                            yanchor='top',
+                            bgcolor='rgba(255, 255, 255, 0.5)',
+                            bordercolor='rgba(0, 0, 0, 0.5)',
+                            borderwidth=1
+                        ),
+                        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                    )
+
+    # Add arrows to the edges
+    for edge in G.edges():
+        x0, y0 = pos[edge[0]]
+        x1, y1 = pos[edge[1]]
+        fig.add_annotation(
+            x=x1, y=y1,
+            ax=x0, ay=y0,
+            xref='x', yref='y', axref='x', ayref='y',
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1,
+            arrowwidth=1,
+            arrowcolor='#888'
+        )
+
+    if mode == 'interactive':
+        fig.show()
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        output_file = f'{title.replace(" ", "_").lower()}_{timestamp}.html'
+        pio.write_html(fig, file=output_file, auto_open=False)
+        print(f"Interactive diagram saved as {output_file}")
+
 if __name__ == "__main__":
     directory = input("Enter the directory path containing your Python scripts and Jupyter notebooks: ")
     G = create_lineage_graph(directory)
@@ -369,11 +448,20 @@ if __name__ == "__main__":
     while True:
         choice = input("Choose an option (full/trace/list/quit): ").lower()
         if choice == 'full':
-            mode = input("Choose visualization mode (interactive/png): ").lower()
-            if mode in ['interactive', 'png']:
-                visualize_graph(G, mode)
+            viz_type = input("Choose visualization type (matplotlib/plotly): ").lower()
+            mode = input("Choose visualization mode (interactive/png for matplotlib, interactive/html for plotly): ").lower()
+            if viz_type == 'matplotlib':
+                if mode in ['interactive', 'png']:
+                    visualize_graph_matplotlib(G, mode)
+                else:
+                    print("Invalid mode for matplotlib. Please enter 'interactive' or 'png'.")
+            elif viz_type == 'plotly':
+                if mode in ['interactive', 'html']:
+                    visualize_graph_plotly(G, mode)
+                else:
+                    print("Invalid mode for plotly. Please enter 'interactive' or 'html'.")
             else:
-                print("Invalid mode. Please enter 'interactive' or 'png'.")
+                print("Invalid visualization type. Please enter 'matplotlib' or 'plotly'.")
         elif choice == 'trace':
             target_file = input("Enter the full path or name of the file to trace: ")
             lineage_graph = trace_file_lineage(G, target_file)
