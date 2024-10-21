@@ -268,8 +268,8 @@ def visualize_graph_matplotlib(G, mode='interactive', title="Data Lineage Diagra
     components = list(nx.weakly_connected_components(G))
     grid_size = math.ceil(math.sqrt(len(components)))
     
-    fig_width = min(32 * (grid_size / 2), 20)  # Max width of 20 inches
-    fig_height = min(24 * (grid_size / 2), 15)  # Max height of 15 inches
+    fig_width = min(32 * (grid_size / 2), 60)  # Max width of 60 inches
+    fig_height = min(24 * (grid_size / 2), 45)  # Max height of 45 inches
     
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=100)
     
@@ -291,7 +291,7 @@ def visualize_graph_matplotlib(G, mode='interactive', title="Data Lineage Diagra
                                arrows=True, arrowsize=20, 
                                node_size=node_size, arrowstyle='->')
         
-        font_size = max(3, 7 - len(subgraph) // 20)
+        font_size = (max(3, 7 - len(subgraph) // 20) - 1)
         
         labels = {}
         for node in subgraph.nodes():
