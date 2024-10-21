@@ -245,7 +245,7 @@ def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', 
             plt.show()
         else:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-            output_file = f'full_graph_lineage_{os.path.basename(target_file)}_{timestamp}.png'
+            output_file = os.path.join(os.path.dirname(__file__), f'full_graph_lineage_{os.path.basename(target_file)}_{timestamp}.png')
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
             plt.close()
             print(f"Full graph with highlighted lineage saved as {output_file}")
@@ -253,7 +253,7 @@ def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', 
 
 def save_nodes_list(G):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    filename = f"graph_nodes_{timestamp}.txt"
+    filename = os.path.join(os.path.dirname(__file__), f"graph_nodes_{timestamp}.txt")
     with open(filename, 'w') as f:
         for node in sorted(G.nodes()):
             f.write(f"{node}\n")
@@ -268,8 +268,8 @@ def visualize_graph_matplotlib(G, mode='interactive', title="Data Lineage Diagra
     components = list(nx.weakly_connected_components(G))
     grid_size = math.ceil(math.sqrt(len(components)))
     
-    fig_width = min(32 * (grid_size / 2), 60)  # Max width of 60 inches
-    fig_height = min(24 * (grid_size / 2), 45)  # Max height of 45 inches
+    fig_width = min(32 * (grid_size / 2), 20)  # Max width of 20 inches
+    fig_height = min(24 * (grid_size / 2), 15)  # Max height of 15 inches
     
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=100)
     
@@ -291,7 +291,7 @@ def visualize_graph_matplotlib(G, mode='interactive', title="Data Lineage Diagra
                                arrows=True, arrowsize=20, 
                                node_size=node_size, arrowstyle='->')
         
-        font_size = (max(3, 7 - len(subgraph) // 20) - 1)
+        font_size = max(3, 7 - len(subgraph) // 20)
         
         labels = {}
         for node in subgraph.nodes():
@@ -328,7 +328,7 @@ def visualize_graph_matplotlib(G, mode='interactive', title="Data Lineage Diagra
         plt.show()
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        output_file = f'{title.replace(" ", "_").lower()}_{timestamp}.png'
+        output_file = os.path.join(os.path.dirname(__file__), f'{title.replace(" ", "_").lower()}_{timestamp}.png')
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.close(fig)
         print(f"Diagram saved as {output_file}")
@@ -437,7 +437,7 @@ def visualize_graph_plotly(G, mode='interactive', title="Data Lineage Diagram"):
         fig.show()
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        output_file = f'{title.replace(" ", "_").lower()}_{timestamp}.html'
+        output_file = os.path.join(os.path.dirname(__file__), f'{title.replace(" ", "_").lower()}_{timestamp}.html')
         pio.write_html(fig, file=output_file, auto_open=False)
         print(f"Interactive diagram saved as {output_file}")
 
