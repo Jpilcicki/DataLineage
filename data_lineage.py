@@ -206,7 +206,14 @@ def trace_file_lineage(G, target_file):
 
 def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', context='sub'):
     if context == 'sub':
-        visualize_graph(lineage_graph, mode, f"Lineage of {os.path.basename(target_file)}")
+        viz_type = input("Choose visualization type for sub-graph (matplotlib/plotly): ").lower()
+        if viz_type == 'matplotlib':
+            visualize_graph_matplotlib(lineage_graph, mode, f"Lineage of {os.path.basename(target_file)}")
+        elif viz_type == 'plotly':
+            visualize_graph_plotly(lineage_graph, mode, f"Lineage of {os.path.basename(target_file)}")
+        else:
+            print("Invalid visualization type. Using matplotlib as default.")
+            visualize_graph_matplotlib(lineage_graph, mode, f"Lineage of {os.path.basename(target_file)}")
     else:
         # Create a copy of the full graph
         full_graph = G.copy()
