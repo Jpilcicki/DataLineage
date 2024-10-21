@@ -123,6 +123,47 @@ def create_lineage_graph(directory):
     
     return G
 
+def trace_spider_lineage(G, target_file):
+    target_file = normalize_path(target_file)
+    
+    target_node = None
+    for node in G.nodes():
+        normalized_node = normalize_path(node)
+        if (target_file in normalized_node or 
+            normalized_node.endswith(target_file) or 
+            os.path.basename(target_file) in normalized_node):
+            target_node = node
+            break
+    
+    if target_node is None:
+        print(f"File {target_file} not found in the graph.")
+        return None
+
+    lineage_graph = nx.DiGraph()
+    
+    def add_related_nodes(node):
+        predecessors = list(G.predecessors(node))
+        successors = list(G.successors(node))
+        for related_node in predecessors + successors:
+            if related_node not in lineage_graph:
+                lineage_graph.add_node(related_node)
+                if related_node in predecessors:
+                    lineage_graph.add_edge(related_node, node)
+                else:
+                    lineage_graph.add_edge(node, related_node)
+                add_related_nodes(related_node)
+
+    lineage_graph.add_node(target_node)
+    add_related_nodes(target_node)
+    
+    # Add dashed edges for same file references
+    for edge in G.edges(data=True):
+        if edge[0] in lineage_graph.nodes() and edge[1] in lineage_graph.nodes():
+            if edge[2].get('style') == 'dashed':
+                lineage_graph.add_edge(edge[0], edge[1], style='dashed')
+    
+    return lineage_graph
+
 
 def create_spider_graph(directory):
     G = nx.DiGraph()
@@ -583,9 +624,10 @@ def visualize_graph_plotly(G, mode='interactive', title="Data Lineage Diagram"):
 if __name__ == "__main__":
     directory = input("Enter the directory path containing your Python scripts and Jupyter notebooks: ")
     G = create_lineage_graph(directory)
+    spider_G = create_spider_graph(directory)
     
     while True:
-        choice = input("Choose an option (full/trace/list/spider/quit): ").lower()
+        choice = input("Choose an option (full/trace/list/spider/spider-trace/quit): ").lower()
         if choice == 'full':
             viz_type = input("Choose visualization type (matplotlib/plotly): ").lower()
             mode = input("Choose visualization mode (interactive/png for matplotlib, interactive/html for plotly): ").lower()
@@ -620,7 +662,16 @@ if __name__ == "__main__":
                 visualize_spider_graph(spider_G, mode)
             else:
                 print("Invalid mode. Please enter 'interactive' or 'png'.")
+        elif choice == 'spider-trace':
+            target_file = input("Enter the full path or name of the file to trace: ")
+            lineage_graph = trace_spider_lineage(spider_G, target_file)
+            if lineage_graph:
+                mode = input("Choose visualization mode (interactive/png): ").lower()
+                if mode in ['interactive', 'png']:
+                    visualize_spider_graph(lineage_graph, mode, f"Spider Lineage of {os.path.basename(target_file)}")
+                else:
+                    print("Invalid mode. Please enter 'interactive' or 'png'.")
         elif choice == 'quit':
             break
         else:
-            print("Invalid choice. Please enter 'full', 'trace', 'list', 'spider', or 'quit'.")
+            print("Invalid choice. Please enter 'full', 'trace', 'list', 'spider', 'spider-trace', or 'quit'.")
