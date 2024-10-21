@@ -123,6 +123,56 @@ def create_lineage_graph(directory):
     
     return G
 
+
+def create_spider_graph(directory):
+    G = nx.DiGraph()
+    file_paths = {}  # Dictionary to store normalized file paths
+
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.endswith(('.py', '.ipynb')):
+                file_path = os.path.join(root, file)
+                operations = extract_io_operations(file_path)
+                
+                file_node = os.path.relpath(file_path, directory)
+                
+                for op, args in operations:
+                    if args:
+                        file_name = args[0]
+                        
+                        if op == 'file_assign':
+                            if "'" in file_name:
+                                file_name = file_name.split("'")[-2]
+                            elif '"' in file_name:
+                                file_name = file_name.split('"')[-2]
+                        
+                        # Normalize the file path
+                        if not os.path.isabs(file_name):
+                            full_path = os.path.normpath(os.path.join(os.path.dirname(file_path), file_name))
+                        else:
+                            full_path = os.path.normpath(file_name)
+                        
+                        # Use the normalized path as the node name
+                        normalized_path = os.path.relpath(full_path, directory)
+                        
+                        if normalized_path not in file_paths:
+                            file_paths[normalized_path] = set()
+                        file_paths[normalized_path].add(file_node)
+                        
+                        if op.startswith('read') or op == 'open':
+                            G.add_edge(normalized_path, file_node)
+                        elif op.startswith('to'):
+                            G.add_edge(file_node, normalized_path)
+    
+    # Connect nodes that reference the same file
+    for file_path, referencing_nodes in file_paths.items():
+        for node1 in referencing_nodes:
+            for node2 in referencing_nodes:
+                if node1 != node2:
+                    G.add_edge(node1, node2, color='blue', style='dashed')
+    
+    return G
+
 def get_file_type(node):
     lower_node = node.lower()
     if node.endswith('.csv'):
@@ -235,7 +285,7 @@ def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', 
                 edge_colors.append('lightgray')
         
         # Visualize the full graph with highlighted lineage
-        plt.figure(figsize=(20, 15))
+        plt.figure(figsize=(60, 45))
         pos = nx.spring_layout(full_graph, k=0.5, iterations=50)
         
         nx.draw_networkx_nodes(full_graph, pos, node_color=node_colors, node_size=300)
@@ -256,6 +306,88 @@ def visualize_traced_lineage(G, lineage_graph, target_file, mode='interactive', 
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
             plt.close()
             print(f"Full graph with highlighted lineage saved as {output_file}")
+
+
+def visualize_spider_graph(G, mode='interactive', title="Data Lineage Spider Diagram"):
+    if not G.nodes():
+        print("No data to visualize. The graph is empty.")
+        return
+
+    components = list(nx.weakly_connected_components(G))
+    grid_size = math.ceil(math.sqrt(len(components)))
+    
+    fig_width = min(32 * (grid_size / 2), 60)  # Max width of 60 inches
+    fig_height = min(24 * (grid_size / 2), 45)  # Max height of 45 inches
+    
+    fig = plt.figure(figsize=(fig_width, fig_height), dpi=100)
+    
+    for i, component in enumerate(components):
+        subgraph = G.subgraph(component)
+        
+        row = i // grid_size
+        col = i % grid_size
+        
+        pos = nx.spring_layout(subgraph, k=2, iterations=50)
+        pos = {node: (x + col * 4, -y - row * 4) for node, (x, y) in pos.items()}
+        
+        node_size = max(1000, 5000 / len(subgraph))
+        
+        # Draw nodes
+        node_colors = [get_node_color(node) for node in subgraph.nodes()]
+        nx.draw_networkx_nodes(subgraph, pos, node_color=node_colors, node_size=node_size)
+        
+        # Draw edges
+        normal_edges = [(u, v) for (u, v, d) in subgraph.edges(data=True) if 'style' not in d]
+        dashed_edges = [(u, v) for (u, v, d) in subgraph.edges(data=True) if d.get('style') == 'dashed']
+        
+        nx.draw_networkx_edges(subgraph, pos, edgelist=normal_edges, edge_color='gray', 
+                               arrows=True, arrowsize=20, node_size=node_size, arrowstyle='->')
+        nx.draw_networkx_edges(subgraph, pos, edgelist=dashed_edges, edge_color='blue', 
+                               style='dashed', arrows=False, node_size=node_size)
+        
+        # Draw labels
+        font_size = max(3, 7 - len(subgraph) // 20)
+        labels = {}
+        for node in subgraph.nodes():
+            parts = node.split(os.sep)
+            if len(parts) >= 3:
+                label = os.path.join(parts[-3], parts[-2], parts[-1])
+            elif len(parts) == 2:
+                label = os.path.join(parts[-2], parts[-1])
+            else:
+                label = parts[-1]
+            labels[node] = '\n'.join(wrap(label, 20))
+        
+        nx.draw_networkx_labels(subgraph, pos, labels, font_size=font_size, font_weight="bold")
+
+    plt.title(title)
+    plt.axis('off')
+    plt.tight_layout()
+
+    legend_elements = [plt.Line2D([0], [0], marker='o', color='w', label='CSV', 
+                                  markerfacecolor='#FFA07A', markersize=10),
+                       plt.Line2D([0], [0], marker='o', color='w', label='JSON', 
+                                  markerfacecolor='#98FB98', markersize=10),
+                       plt.Line2D([0], [0], marker='o', color='w', label='PY', 
+                                  markerfacecolor='#87CEFA', markersize=10),
+                       plt.Line2D([0], [0], marker='o', color='w', label='IPYNB', 
+                                  markerfacecolor='#DDA0DD', markersize=10),
+                       plt.Line2D([0], [0], marker='o', color='w', label='Other', 
+                                  markerfacecolor='#F0E68C', markersize=10),
+                       plt.Line2D([0], [0], color='gray', label='Input/Output'),
+                       plt.Line2D([0], [0], color='blue', linestyle='--', label='Same File Reference')]
+    plt.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1, 1))
+
+    plt.subplots_adjust(right=0.85)
+    
+    if mode == 'interactive':
+        plt.show()
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        output_file = os.path.join(os.path.dirname(__file__), f'{title.replace(" ", "_").lower()}_{timestamp}.png')
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Spider diagram saved as {output_file}")
 
 
 def save_nodes_list(G):
@@ -453,7 +585,7 @@ if __name__ == "__main__":
     G = create_lineage_graph(directory)
     
     while True:
-        choice = input("Choose an option (full/trace/list/quit): ").lower()
+        choice = input("Choose an option (full/trace/list/spider/quit): ").lower()
         if choice == 'full':
             viz_type = input("Choose visualization type (matplotlib/plotly): ").lower()
             mode = input("Choose visualization mode (interactive/png for matplotlib, interactive/html for plotly): ").lower()
@@ -481,7 +613,14 @@ if __name__ == "__main__":
                     print("Invalid input. Please enter 'interactive' or 'png' for mode, and 'sub' or 'full' for context.")
         elif choice == 'list':
             save_nodes_list(G)
+        elif choice == 'spider':
+            spider_G = create_spider_graph(directory)
+            mode = input("Choose visualization mode (interactive/png): ").lower()
+            if mode in ['interactive', 'png']:
+                visualize_spider_graph(spider_G, mode)
+            else:
+                print("Invalid mode. Please enter 'interactive' or 'png'.")
         elif choice == 'quit':
             break
         else:
-            print("Invalid choice. Please enter 'full', 'trace', 'list', or 'quit'.")
+            print("Invalid choice. Please enter 'full', 'trace', 'list', 'spider', or 'quit'.")
